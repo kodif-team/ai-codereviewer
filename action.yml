@@ -11,7 +11,7 @@ inputs:
     description: "OpenAI API model."
     required: false
     default: "gpt-4"
-  REVIEW_GUIDELINES:
+  GUIDELINES:
     description: "Code review guidelines."
     required: false
     default: ""
