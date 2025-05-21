@@ -59,8 +59,8 @@ async function getDiff(
 async function analyzeCode(
   parsedDiff: File[],
   prDetails: PRDetails
-): Promise<Array<{ body: string; path: string; line: number }>> {
-  const comments: Array<{ body: string; path: string; line: number }> = [];
+): Promise<Array<{ body: string; path: string; position: number }>> {
+  const comments: Array<{ body: string; path: string; position: number }> = [];
 
   for (const file of parsedDiff) {
     if (file.to === "/dev/null") continue; // Ignore deleted files
@@ -146,6 +146,23 @@ async function getAIResponse(prompt: string): Promise<Array<{
   }
 }
 
+// Helper to build lineNumber -> position mapping for a file's diff
+function buildLineToPositionMap(file: File) {
+  const map: Record<number, number> = {};
+  let position = 0;
+  for (const chunk of file.chunks) {
+    for (const change of chunk.changes) {
+      if (change.type !== 'del') {
+        position++;
+        if (change.ln2 !== undefined) {
+          map[change.ln2] = position;
+        }
+      }
+    }
+  }
+  return map;
+}
+
 function createComment(
   file: File,
   chunk: Chunk,
@@ -153,15 +170,17 @@ function createComment(
     lineNumber: string;
     reviewComment: string;
   }>
-): Array<{ body: string; path: string; line: number }> {
+): Array<{ body: string; path: string; position: number }> {
+  const lineToPosition = buildLineToPositionMap(file);
   return aiResponses.flatMap((aiResponse) => {
-    if (!file.to) {
-      return [];
-    }
+    if (!file.to) return [];
+    const lineNum = Number(aiResponse.lineNumber);
+    const position = lineToPosition[lineNum];
+    if (!position) return []; // skip if not found in diff
     return {
       body: aiResponse.reviewComment,
       path: file.to,
-      line: Number(aiResponse.lineNumber),
+      position,
     };
   });
 }
@@ -170,7 +189,7 @@ async function createReviewComment(
   owner: string,
   repo: string,
   pull_number: number,
-  comments: Array<{ body: string; path: string; line: number }>
+  comments: Array<{ body: string; path: string; position: number }>
 ): Promise<void> {
   await octokit.pulls.createReview({
     owner,
