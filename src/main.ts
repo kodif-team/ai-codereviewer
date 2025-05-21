@@ -8,6 +8,12 @@ import minimatch from "minimatch";
 const GITHUB_TOKEN: string = core.getInput("GITHUB_TOKEN");
 const OPENAI_API_KEY: string = core.getInput("OPENAI_API_KEY");
 const OPENAI_API_MODEL: string = core.getInput("OPENAI_API_MODEL");
+const REVIEW_GUIDELINES:string = core.getInput("REVIEW_GUIDELINES");
+
+const REVIEW_GUIDELINES_PROMPT:string = REVIEW_GUIDELINES ? `
+Code Review Guidelines:
+${REVIEW_GUIDELINES}
+` : "";
 
 const octokit = new Octokit({ auth: GITHUB_TOKEN });
 
@@ -52,8 +58,7 @@ async function getDiff(
     pull_number,
     mediaType: { format: "diff" },
   });
-  // @ts-expect-error - response.data is a string
-  return response.data;
+  return response.data as string;
 }
 
 async function analyzeCode(
@@ -63,12 +68,17 @@ async function analyzeCode(
   const comments: Array<{ body: string; path: string; position: number }> = [];
 
   for (const file of parsedDiff) {
-    if (file.to === "/dev/null") continue; // Ignore deleted files
+    if (!file.to || file.to === "/dev/null") continue;
+
+    const lineToPosition = buildLineToPositionMap(file);
     for (const chunk of file.chunks) {
       const prompt = createPrompt(file, chunk, prDetails);
       const aiResponse = await getAIResponse(prompt);
       if (aiResponse) {
-        const newComments = createComment(file, chunk, aiResponse);
+        const newComments = createComment(lineToPosition, aiResponse).map(comment => ({
+          ...comment, path: file.to
+        }));
+
         if (newComments) {
           comments.push(...newComments);
         }
@@ -79,7 +89,11 @@ async function analyzeCode(
 }
 
 function createPrompt(file: File, chunk: Chunk, prDetails: PRDetails): string {
-  return `Your task is to review pull requests. Instructions:
+  return `
+Your task is to review pull requests. 
+${REVIEW_GUIDELINES_PROMPT}
+
+Instructions:
 - Provide the response in following JSON format:  {"reviews": [{"lineNumber":  <line_number>, "reviewComment": "<review comment>"}]}
 - Do not give positive comments or compliments.
 - Provide comments and suggestions ONLY if there is something to improve, otherwise "reviews" should be an empty array.
@@ -126,10 +140,7 @@ async function getAIResponse(prompt: string): Promise<Array<{
   try {
     const response = await openai.chat.completions.create({
       ...queryConfig,
-      // return JSON if the model supports it:
-      ...(OPENAI_API_MODEL === "gpt-4-1106-preview"
-        ? { response_format: { type: "json_object" } }
-        : {}),
+      response_format: { type: "json_object" },
       messages: [
         {
           role: "system",
@@ -164,22 +175,18 @@ function buildLineToPositionMap(file: File) {
 }
 
 function createComment(
-  file: File,
-  chunk: Chunk,
+  lineToPosition: Record<number, number>,
   aiResponses: Array<{
     lineNumber: string;
     reviewComment: string;
   }>
-): Array<{ body: string; path: string; position: number }> {
-  const lineToPosition = buildLineToPositionMap(file);
+): Array<{ body: string; position: number }> {
   return aiResponses.flatMap((aiResponse) => {
-    if (!file.to) return [];
     const lineNum = Number(aiResponse.lineNumber);
     const position = lineToPosition[lineNum];
-    if (!position) return []; // skip if not found in diff
+    if (!position) return [];
     return {
       body: aiResponse.reviewComment,
-      path: file.to,
       position,
     };
   });
@@ -243,10 +250,10 @@ async function main() {
   const excludePatterns = core
     .getInput("exclude")
     .split(",")
-    .map((s) => s.trim());
+    .map((s: string) => s.trim());
 
-  const filteredDiff = parsedDiff.filter((file) => {
-    return !excludePatterns.some((pattern) =>
+  const filteredDiff = parsedDiff.filter((file: File) => {
+    return !excludePatterns.some((pattern: string) =>
       minimatch(file.to ?? "", pattern)
     );
   });
