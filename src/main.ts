@@ -10,11 +10,6 @@ const OPENAI_API_KEY: string = core.getInput("OPENAI_API_KEY");
 const OPENAI_API_MODEL: string = core.getInput("OPENAI_API_MODEL");
 const REVIEW_GUIDELINES:string = core.getInput("REVIEW_GUIDELINES");
 
-const REVIEW_GUIDELINES_PROMPT:string = REVIEW_GUIDELINES ? `
-Code Review Guidelines:
-${REVIEW_GUIDELINES}
-` : "";
-
 const octokit = new Octokit({ auth: GITHUB_TOKEN });
 
 const openai = new OpenAI({
@@ -89,9 +84,14 @@ async function analyzeCode(
 }
 
 function createPrompt(file: File, chunk: Chunk, prDetails: PRDetails): string {
+  const guidelines = REVIEW_GUIDELINES != "" ? `
+Code Review Guidelines:
+${REVIEW_GUIDELINES}
+  ` : "";
+
   return `
 Your task is to review pull requests. 
-${REVIEW_GUIDELINES_PROMPT}
+${guidelines}
 
 Instructions:
 - Provide the response in following JSON format:  {"reviews": [{"lineNumber":  <line_number>, "reviewComment": "<review comment>"}]}
@@ -248,7 +248,7 @@ async function main() {
   const parsedDiff = parseDiff(diff);
 
   const excludePatterns = core
-    .getInput("exclude")
+    .getInput("EXCLUDE")
     .split(",")
     .map((s: string) => s.trim());
 
@@ -271,5 +271,5 @@ async function main() {
 
 main().catch((error) => {
   console.error("Error:", error);
-  process.exit(1);
+  core.setFailed(error.message);
 });

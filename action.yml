@@ -11,7 +11,11 @@ inputs:
     description: "OpenAI API model."
     required: false
     default: "gpt-4"
-  exclude:
+  REVIEW_GUIDELINES:
+    description: "Code review guidelines."
+    required: false
+    default: ""
+  EXCLUDE:
     description: "Glob patterns to exclude files from the diff analysis"
     required: false
     default: ""
