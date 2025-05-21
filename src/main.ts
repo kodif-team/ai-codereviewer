@@ -8,7 +8,7 @@ import minimatch from "minimatch";
 const GITHUB_TOKEN: string = core.getInput("GITHUB_TOKEN");
 const OPENAI_API_KEY: string = core.getInput("OPENAI_API_KEY");
 const OPENAI_API_MODEL: string = core.getInput("OPENAI_API_MODEL");
-const GUIDELINES:string[] = core.getMultilineInput("GUIDELINES");
+const GUIDELINES:string = core.getInput("GUIDELINES");
 
 const octokit = new Octokit({ auth: GITHUB_TOKEN });
 
@@ -84,9 +84,9 @@ async function analyzeCode(
 }
 
 function createPrompt(file: File, chunk: Chunk, prDetails: PRDetails): string {
-  const guidelines = GUIDELINES.length > 0 ? `
+  const guidelines = GUIDELINES != "" ? `
 Code Review Guidelines:
-${GUIDELINES.map(guideline => `- ${guideline}`).join('\n')}
+${GUIDELINES}
   ` : "";
 
   return `
