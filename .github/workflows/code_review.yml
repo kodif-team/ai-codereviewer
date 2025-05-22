@@ -1,20 +1,29 @@
-name: Code Review with OpenAI
+name: AI Code Reviewer
+
 on:
   pull_request:
+    branches:
+      - main
+
     types:
       - opened
       - synchronize
-permissions: write-all
+
+permissions:
+  contents: read
+  pull-requests: write
+        
 jobs:
-  code_review:
+  review:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-      - name: Code Review
-        uses: freeedcom/ai-codereviewer@main
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: AI Code Reviewer
+        uses: kodif-team/ai-codereviewer@v3.1
         with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_API_MODEL: "gpt-4-1106-preview"
-          exclude: "yarn.lock,dist/**"
+          OPENAI_API_MODEL: "gpt-4.1"
+          EXCLUDE: "**/*.json, **/*.md"
