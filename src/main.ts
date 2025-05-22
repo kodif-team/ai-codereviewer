@@ -59,14 +59,14 @@ async function getDiff(
 async function analyzeCode(
   parsedDiff: File[],
   prDetails: PRDetails
-): Promise<Array<{ body: string; path: string; position: number; }>> {
-  const comments: Array<{ body: string; path: string; position: number; }> = [];
+): Promise<Array<{ body: string; path: string; line: number; side: "LEFT" | "RIGHT" }>> {
+  const comments: Array<{ body: string; path: string; line: number; side: "LEFT" | "RIGHT" }> = [];
 
   for (const file of parsedDiff) {
     const currentFilePath = file.to;
     if (!currentFilePath || currentFilePath === "/dev/null") continue;
 
-    const lineToPositionMap = buildLineToPositionMap(file.chunks);
+    const lineToSideMap = buildLineToSideMap(file.chunks);
 
     for (const chunk of file.chunks) {
       const prompt = createPrompt(file, chunk, prDetails);
@@ -74,7 +74,7 @@ async function analyzeCode(
       
       const aiResponse = await getAIResponse(prompt);
       if (aiResponse) {
-        const newCommentsForFile = createComment(lineToPositionMap, aiResponse).map(comment => ({
+        const newCommentsForFile = createComment(lineToSideMap, aiResponse).map(comment => ({
           ...comment,
           path: currentFilePath,
         }));
@@ -216,32 +216,29 @@ async function getAIResponse(prompt: string): Promise<Array<{
   throw lastError;
 }
 
-
-function buildLineToPositionMap(chunks: Chunk[]): Record<number, number> {
-  const map: Record<number, number> = {};
-  let pos = 0;
+function buildLineToSideMap(chunks: Chunk[]): Record<number, { side: "LEFT" | "RIGHT", line: number }> {
+  const map: Record<number, { side: "LEFT" | "RIGHT", line: number }> = {};
   for (const chunk of chunks) {
     for (const change of chunk.changes) {
-      pos++;
-      if (change.type === 'add' || change.type === 'normal') {
-        const lineNumber = change.type === 'add' ? change.ln : change.ln2;
-        if (lineNumber != null) {
-          map[lineNumber] = pos;
-        }
+      if (change.type === 'add') {
+        map[change.ln] = { side: "RIGHT", line: change.ln };
+      } else if (change.type === 'del') {
+        map[change.ln] = { side: "LEFT", line: change.ln };
+      } else if (change.type === 'normal') {
+        map[change.ln2] = { side: "RIGHT", line: change.ln2 };
       }
     }
   }
   return map;
 }
 
-
 function createComment(
-  lineToPositionMap: Record<number, number>,
+  lineToSideMap: Record<number, { side: "LEFT" | "RIGHT", line: number }>,
   aiResponses: Array<{
     lineNumber: string;
     reviewComment: string;
   }>
-): Array<{ body: string; position: number }> {
+): Array<{ body: string; line: number; side: "LEFT" | "RIGHT" }> {
   return aiResponses.flatMap((aiResponse) => {
     const lineNum = Number(aiResponse.lineNumber);
     if (isNaN(lineNum) || lineNum <= 0) {
@@ -249,15 +246,16 @@ function createComment(
       return []
     }
 
-    const position = lineToPositionMap[lineNum];
-    if (!position) {
-      console.log(`Line number not found in lineToPositionMap: ${lineNum}`);
+    const lineInfo = lineToSideMap[lineNum];
+    if (!lineInfo) {
+      console.log(`Line number not found in lineToSideMap: ${lineNum}`);
       return []
     }
 
     return {
       body: aiResponse.reviewComment,
-      position: position,
+      line: lineInfo.line,
+      side: lineInfo.side,
     };
   });
 }
@@ -266,7 +264,7 @@ async function createReviewComment(
   owner: string,
   repo: string,
   pull_number: number,
-  comments: Array<{ body: string; path: string; position: number; }>
+  comments: Array<{ body: string; path: string; line: number; side: "LEFT" | "RIGHT" }>
 ): Promise<void> {
   await octokit.pulls.createReview({
     owner,

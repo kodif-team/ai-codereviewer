@@ -15620,13 +15620,13 @@ function analyzeCode(parsedDiff, prDetails) {
             const currentFilePath = file.to;
             if (!currentFilePath || currentFilePath === "/dev/null")
                 continue;
-            const lineToPositionMap = buildLineToPositionMap(file.chunks);
+            const lineToSideMap = buildLineToSideMap(file.chunks);
             for (const chunk of file.chunks) {
                 const prompt = createPrompt(file, chunk, prDetails);
                 console.log(prompt);
                 const aiResponse = yield getAIResponse(prompt);
                 if (aiResponse) {
-                    const newCommentsForFile = createComment(lineToPositionMap, aiResponse).map(comment => (Object.assign(Object.assign({}, comment), { path: currentFilePath })));
+                    const newCommentsForFile = createComment(lineToSideMap, aiResponse).map(comment => (Object.assign(Object.assign({}, comment), { path: currentFilePath })));
                     if (newCommentsForFile.length > 0) {
                         comments.push(...newCommentsForFile);
                     }
@@ -15756,37 +15756,39 @@ function getAIResponse(prompt) {
         throw lastError;
     });
 }
-function buildLineToPositionMap(chunks) {
+function buildLineToSideMap(chunks) {
     const map = {};
-    let pos = 0;
     for (const chunk of chunks) {
         for (const change of chunk.changes) {
-            pos++;
-            if (change.type === 'add' || change.type === 'normal') {
-                const lineNumber = change.type === 'add' ? change.ln : change.ln2;
-                if (lineNumber != null) {
-                    map[lineNumber] = pos;
-                }
+            if (change.type === 'add') {
+                map[change.ln] = { side: "RIGHT", line: change.ln };
+            }
+            else if (change.type === 'del') {
+                map[change.ln] = { side: "LEFT", line: change.ln };
+            }
+            else if (change.type === 'normal') {
+                map[change.ln2] = { side: "RIGHT", line: change.ln2 };
             }
         }
     }
     return map;
 }
-function createComment(lineToPositionMap, aiResponses) {
+function createComment(lineToSideMap, aiResponses) {
     return aiResponses.flatMap((aiResponse) => {
         const lineNum = Number(aiResponse.lineNumber);
         if (isNaN(lineNum) || lineNum <= 0) {
             console.log(`Invalid line number: ${aiResponse}`);
             return [];
         }
-        const position = lineToPositionMap[lineNum];
-        if (!position) {
-            console.log(`Line number not found in lineToPositionMap: ${lineNum}`);
+        const lineInfo = lineToSideMap[lineNum];
+        if (!lineInfo) {
+            console.log(`Line number not found in lineToSideMap: ${lineNum}`);
             return [];
         }
         return {
             body: aiResponse.reviewComment,
-            position: position,
+            line: lineInfo.line,
+            side: lineInfo.side,
         };
     });
 }
