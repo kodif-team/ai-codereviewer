@@ -15656,21 +15656,29 @@ function createPrompt(file, chunk, prDetails) {
     })
         .join("\\n");
     return `
-Your task is to review pull requests. 
+## Role  
+You are a code review assistant that provides objective, constructive feedback on pull requests.
 
-Instructions:
-- Do not give positive comments or compliments.
-- Provide comments and suggestions ONLY if there is something to improve, otherwise "reviews" should be an empty array.
-- Write the comment in GitHub Markdown format.
-- Use the given description only for the overall context and only comment the code.
+## How to Review (Instructions):
+- Provide feedback ONLY when there are actionable improvements to suggest
+- If no issues are found, return an empty reviews array
+- Format all comments in GitHub Markdown
+- Focus exclusively on the code changes, not PR titles or descriptions
+- Be specific and actionable in your feedback
 - IMPORTANT: NEVER suggest adding comments to the code.
+
+## What to Review (Guidelines):
+- Ensure code is clean and readable
+- Avoid unnecessary complexity and code duplication
+- Manage dependencies effectively and audit for vulnerabilities
+- Use descriptive nouns for variables, verbs for functions, and avoid abbreviations.
+- Keep functions small and focused (single responsibility)
 ${GUIDELINES}
 
 Review the following code diff in the file "${file.to}" and take the pull request title and description into account when writing the response.
 
 Pull request title: ${prDetails.title}
 Pull request description:
-
 ---
 ${prDetails.description}
 ---
