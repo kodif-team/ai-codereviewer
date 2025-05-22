@@ -59,13 +59,14 @@ async function getDiff(
 async function analyzeCode(
   parsedDiff: File[],
   prDetails: PRDetails
-): Promise<Array<{ body: string; path: string; line: number; side: "RIGHT" | "LEFT" }>> {
-  const comments: Array<{ body: string; path: string; line: number; side: "RIGHT" | "LEFT" }> = [];
+): Promise<Array<{ body: string; path: string; position: number; }>> {
+  const comments: Array<{ body: string; path: string; position: number; }> = [];
 
   for (const file of parsedDiff) {
-    if (!file.to || file.to === "/dev/null") continue;
-
     const currentFilePath = file.to;
+    if (!currentFilePath || currentFilePath === "/dev/null") continue;
+
+    const lineToPositionMap = buildLineToPositionMap(file.chunks);
 
     for (const chunk of file.chunks) {
       const prompt = createPrompt(file, chunk, prDetails);
@@ -73,7 +74,7 @@ async function analyzeCode(
       
       const aiResponse = await getAIResponse(prompt);
       if (aiResponse) {
-        const newCommentsForFile = createComment(aiResponse).map(comment => ({
+        const newCommentsForFile = createComment(lineToPositionMap, aiResponse).map(comment => ({
           ...comment,
           path: currentFilePath,
         }));
@@ -215,19 +216,48 @@ async function getAIResponse(prompt: string): Promise<Array<{
   throw lastError;
 }
 
+
+function buildLineToPositionMap(chunks: Chunk[]): Record<number, number> {
+  const map: Record<number, number> = {};
+  for (const chunk of chunks) {
+    let pos = 0;
+    for (const change of chunk.changes) {
+      pos++;
+      if (change.type === 'add' || change.type === 'normal') {
+        const lineNumber = change.type === 'add' ? change.ln : change.ln2;
+        if (lineNumber != null) {
+          map[lineNumber] = pos;
+        }
+      }
+    }
+  }
+  return map;
+}
+
+
 function createComment(
+  lineToPositionMap: Record<number, number>,
   aiResponses: Array<{
     lineNumber: string;
     reviewComment: string;
   }>
-): Array<{ body: string; line: number; side: "RIGHT" }> {
+): Array<{ body: string; position: number }> {
   return aiResponses.flatMap((aiResponse) => {
     const lineNum = Number(aiResponse.lineNumber);
-    if (isNaN(lineNum) || lineNum <= 0) return [];
+    if (isNaN(lineNum) || lineNum <= 0) {
+      console.log(`Invalid line number: ${aiResponse}`);
+      return []
+    }
+
+    const position = lineToPositionMap[lineNum];
+    if (!position) {
+      console.log(`Line number not found in lineToPositionMap: ${lineNum}`);
+      return []
+    }
+
     return {
       body: aiResponse.reviewComment,
-      line: lineNum,
-      side: "RIGHT",
+      position: position,
     };
   });
 }
@@ -236,7 +266,7 @@ async function createReviewComment(
   owner: string,
   repo: string,
   pull_number: number,
-  comments: Array<{ body: string; path: string; line: number; side: "RIGHT" | "LEFT" }>
+  comments: Array<{ body: string; path: string; position: number; }>
 ): Promise<void> {
   await octokit.pulls.createReview({
     owner,

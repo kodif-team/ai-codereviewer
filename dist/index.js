@@ -15617,15 +15617,16 @@ function analyzeCode(parsedDiff, prDetails) {
     return __awaiter(this, void 0, void 0, function* () {
         const comments = [];
         for (const file of parsedDiff) {
-            if (!file.to || file.to === "/dev/null")
-                continue;
             const currentFilePath = file.to;
+            if (!currentFilePath || currentFilePath === "/dev/null")
+                continue;
+            const lineToPositionMap = buildLineToPositionMap(file.chunks);
             for (const chunk of file.chunks) {
                 const prompt = createPrompt(file, chunk, prDetails);
                 console.log(prompt);
                 const aiResponse = yield getAIResponse(prompt);
                 if (aiResponse) {
-                    const newCommentsForFile = createComment(aiResponse).map(comment => (Object.assign(Object.assign({}, comment), { path: currentFilePath })));
+                    const newCommentsForFile = createComment(lineToPositionMap, aiResponse).map(comment => (Object.assign(Object.assign({}, comment), { path: currentFilePath })));
                     if (newCommentsForFile.length > 0) {
                         comments.push(...newCommentsForFile);
                     }
@@ -15755,15 +15756,37 @@ function getAIResponse(prompt) {
         throw lastError;
     });
 }
-function createComment(aiResponses) {
+function buildLineToPositionMap(chunks) {
+    const map = {};
+    for (const chunk of chunks) {
+        let pos = 0;
+        for (const change of chunk.changes) {
+            pos++;
+            if (change.type === 'add' || change.type === 'normal') {
+                const lineNumber = change.type === 'add' ? change.ln : change.ln2;
+                if (lineNumber != null) {
+                    map[lineNumber] = pos;
+                }
+            }
+        }
+    }
+    return map;
+}
+function createComment(lineToPositionMap, aiResponses) {
     return aiResponses.flatMap((aiResponse) => {
         const lineNum = Number(aiResponse.lineNumber);
-        if (isNaN(lineNum) || lineNum <= 0)
+        if (isNaN(lineNum) || lineNum <= 0) {
+            console.log(`Invalid line number: ${aiResponse}`);
             return [];
+        }
+        const position = lineToPositionMap[lineNum];
+        if (!position) {
+            console.log(`Line number not found in lineToPositionMap: ${lineNum}`);
+            return [];
+        }
         return {
             body: aiResponse.reviewComment,
-            line: lineNum,
-            side: "RIGHT",
+            position: position,
         };
     });
 }
