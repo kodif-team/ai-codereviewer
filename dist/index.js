@@ -15620,13 +15620,12 @@ function analyzeCode(parsedDiff, prDetails) {
             const currentFilePath = file.to;
             if (!currentFilePath || currentFilePath === "/dev/null")
                 continue;
-            const lineToSideMap = buildLineToSideMap(file.chunks);
             for (const chunk of file.chunks) {
                 const prompt = createPrompt(file, chunk, prDetails);
                 console.log(prompt);
                 const aiResponse = yield getAIResponse(prompt);
                 if (aiResponse) {
-                    const newCommentsForFile = createComment(lineToSideMap, aiResponse).map(comment => (Object.assign(Object.assign({}, comment), { path: currentFilePath })));
+                    const newCommentsForFile = createComment(aiResponse).map(comment => (Object.assign(Object.assign({}, comment), { path: currentFilePath })));
                     if (newCommentsForFile.length > 0) {
                         comments.push(...newCommentsForFile);
                     }
@@ -15683,8 +15682,6 @@ Pull request description:
 ${prDetails.description}
 ---
 
-Hunk header: @@ -${chunk.oldStart},${chunk.oldLines} +${chunk.newStart},${chunk.newLines} @@
-
 Git diff to review:
 
 \`\`\`diff
@@ -15701,9 +15698,10 @@ const reviewsJsonSchema = {
                 "type": "object",
                 "properties": {
                     "lineNumber": { "type": "integer" },
+                    "changeType": { "type": "enum", "enum": ["+", "-"] },
                     "reviewComment": { "type": "string" }
                 },
-                "required": ["lineNumber", "reviewComment"]
+                "required": ["lineNumber", "changeType", "reviewComment"]
             }
         }
     },
@@ -15756,39 +15754,17 @@ function getAIResponse(prompt) {
         throw lastError;
     });
 }
-function buildLineToSideMap(chunks) {
-    const map = {};
-    for (const chunk of chunks) {
-        for (const change of chunk.changes) {
-            if (change.type === 'add') {
-                map[change.ln] = { side: "RIGHT", line: change.ln };
-            }
-            else if (change.type === 'del') {
-                map[change.ln] = { side: "LEFT", line: change.ln };
-            }
-            else if (change.type === 'normal') {
-                map[change.ln2] = { side: "RIGHT", line: change.ln2 };
-            }
-        }
-    }
-    return map;
-}
-function createComment(lineToSideMap, aiResponses) {
+function createComment(aiResponses) {
     return aiResponses.flatMap((aiResponse) => {
-        const lineNum = Number(aiResponse.lineNumber);
+        const lineNum = aiResponse.lineNumber;
         if (isNaN(lineNum) || lineNum <= 0) {
             console.log(`Invalid line number: ${aiResponse}`);
             return [];
         }
-        const lineInfo = lineToSideMap[lineNum];
-        if (!lineInfo) {
-            console.log(`Line number not found in lineToSideMap: ${lineNum}`);
-            return [];
-        }
         return {
             body: aiResponse.reviewComment,
-            line: lineInfo.line,
-            side: lineInfo.side,
+            line: lineNum,
+            side: aiResponse.changeType === "+" ? "RIGHT" : "LEFT",
         };
     });
 }

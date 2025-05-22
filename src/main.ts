@@ -66,15 +66,13 @@ async function analyzeCode(
     const currentFilePath = file.to;
     if (!currentFilePath || currentFilePath === "/dev/null") continue;
 
-    const lineToSideMap = buildLineToSideMap(file.chunks);
-
     for (const chunk of file.chunks) {
       const prompt = createPrompt(file, chunk, prDetails);
       console.log(prompt);
       
       const aiResponse = await getAIResponse(prompt);
       if (aiResponse) {
-        const newCommentsForFile = createComment(lineToSideMap, aiResponse).map(comment => ({
+        const newCommentsForFile = createComment(aiResponse).map(comment => ({
           ...comment,
           path: currentFilePath,
         }));
@@ -133,8 +131,6 @@ Pull request description:
 ${prDetails.description}
 ---
 
-Hunk header: @@ -${chunk.oldStart},${chunk.oldLines} +${chunk.newStart},${chunk.newLines} @@
-
 Git diff to review:
 
 \`\`\`diff
@@ -153,9 +149,10 @@ const reviewsJsonSchema =
         "type": "object",
         "properties": {
           "lineNumber": { "type": "integer" },
+          "changeType": { "type": "enum", "enum": ["+", "-"] },
           "reviewComment": { "type": "string" }
         },
-        "required": ["lineNumber", "reviewComment"]
+        "required": ["lineNumber", "changeType", "reviewComment"]
       }
     }
   },
@@ -163,7 +160,8 @@ const reviewsJsonSchema =
 }
 
 async function getAIResponse(prompt: string): Promise<Array<{
-  lineNumber: string;
+  lineNumber: number;
+  changeType: string;
   reviewComment: string;
 }> | null> {
   const queryConfig = {
@@ -216,46 +214,24 @@ async function getAIResponse(prompt: string): Promise<Array<{
   throw lastError;
 }
 
-function buildLineToSideMap(chunks: Chunk[]): Record<number, { side: "LEFT" | "RIGHT", line: number }> {
-  const map: Record<number, { side: "LEFT" | "RIGHT", line: number }> = {};
-  for (const chunk of chunks) {
-    for (const change of chunk.changes) {
-      if (change.type === 'add') {
-        map[change.ln] = { side: "RIGHT", line: change.ln };
-      } else if (change.type === 'del') {
-        map[change.ln] = { side: "LEFT", line: change.ln };
-      } else if (change.type === 'normal') {
-        map[change.ln2] = { side: "RIGHT", line: change.ln2 };
-      }
-    }
-  }
-  return map;
-}
-
 function createComment(
-  lineToSideMap: Record<number, { side: "LEFT" | "RIGHT", line: number }>,
   aiResponses: Array<{
-    lineNumber: string;
+    lineNumber: number;
+    changeType: string;
     reviewComment: string;
   }>
 ): Array<{ body: string; line: number; side: "LEFT" | "RIGHT" }> {
   return aiResponses.flatMap((aiResponse) => {
-    const lineNum = Number(aiResponse.lineNumber);
+    const lineNum = aiResponse.lineNumber;
     if (isNaN(lineNum) || lineNum <= 0) {
       console.log(`Invalid line number: ${aiResponse}`);
       return []
     }
 
-    const lineInfo = lineToSideMap[lineNum];
-    if (!lineInfo) {
-      console.log(`Line number not found in lineToSideMap: ${lineNum}`);
-      return []
-    }
-
     return {
       body: aiResponse.reviewComment,
-      line: lineInfo.line,
-      side: lineInfo.side,
+      line: lineNum,
+      side: aiResponse.changeType === "+" ? "RIGHT" : "LEFT",
     };
   });
 }
