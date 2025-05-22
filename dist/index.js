@@ -15621,12 +15621,11 @@ function analyzeCode(parsedDiff, prDetails) {
                 continue;
             const currentFilePath = file.to;
             for (const chunk of file.chunks) {
-                const lineToPosition = buildLineToPositionMap(chunk);
                 const prompt = createPrompt(file, chunk, prDetails);
                 console.log(prompt);
                 const aiResponse = yield getAIResponse(prompt);
                 if (aiResponse) {
-                    const newCommentsForFile = createComment(lineToPosition, aiResponse).map(comment => (Object.assign(Object.assign({}, comment), { path: currentFilePath })));
+                    const newCommentsForFile = createComment(aiResponse).map(comment => (Object.assign(Object.assign({}, comment), { path: currentFilePath })));
                     if (newCommentsForFile.length > 0) {
                         comments.push(...newCommentsForFile);
                     }
@@ -15756,30 +15755,15 @@ function getAIResponse(prompt) {
         throw lastError;
     });
 }
-function buildLineToPositionMap(chunk) {
-    const map = {};
-    let currentPositionInDiff = 0;
-    for (const change of chunk.changes) {
-        if (change.type === 'add') {
-            currentPositionInDiff++;
-            map[change.ln] = currentPositionInDiff;
-        }
-        else if (change.type === 'normal') {
-            currentPositionInDiff++;
-            map[change.ln2] = currentPositionInDiff;
-        }
-    }
-    return map;
-}
-function createComment(lineToPosition, aiResponses) {
+function createComment(aiResponses) {
     return aiResponses.flatMap((aiResponse) => {
         const lineNum = Number(aiResponse.lineNumber);
-        const position = lineToPosition[lineNum];
-        if (!position)
+        if (isNaN(lineNum) || lineNum <= 0)
             return [];
         return {
             body: aiResponse.reviewComment,
-            position,
+            line: lineNum,
+            side: "RIGHT",
         };
     });
 }
