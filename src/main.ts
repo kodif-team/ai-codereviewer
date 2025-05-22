@@ -22,6 +22,8 @@ interface PRDetails {
   pull_number: number;
   title: string;
   description: string;
+  baseSha: string;
+  headSha: string;
 }
 
 async function getPRDetails(): Promise<PRDetails> {
@@ -39,6 +41,8 @@ async function getPRDetails(): Promise<PRDetails> {
     pull_number: number,
     title: prResponse.data.title ?? "",
     description: prResponse.data.body ?? "",
+    baseSha: prResponse.data.base.sha,
+    headSha: prResponse.data.head.sha,
   };
 }
 
@@ -259,37 +263,17 @@ async function createReviewComment(
 
 async function main() {
   const prDetails = await getPRDetails();
-  let diff: string | null;
-  const eventData = JSON.parse(
-    readFileSync(process.env.GITHUB_EVENT_PATH ?? "", "utf8")
-  );
 
-  if (eventData.action === "opened") {
-    diff = await getDiff(
-      prDetails.owner,
-      prDetails.repo,
-      prDetails.pull_number
-    );
-    
-  } else if (eventData.action === "synchronize") {
-    const newBaseSha = eventData.before;
-    const newHeadSha = eventData.after;
-
-    const response = await octokit.repos.compareCommits({
-      headers: {
-        accept: "application/vnd.github.v3.diff",
-      },
-      owner: prDetails.owner,
-      repo: prDetails.repo,
-      base: newBaseSha,
-      head: newHeadSha,
-    });
-
-    diff = String(response.data);
-  } else {
-    console.log("Unsupported event:", process.env.GITHUB_EVENT_NAME);
-    return;
-  }
+  const response = await octokit.repos.compareCommits({
+    owner: prDetails.owner,
+    repo: prDetails.repo,
+    base: prDetails.baseSha,
+    head: prDetails.headSha,
+    headers: {
+      accept: "application/vnd.github.v3.diff",
+    },
+  });
+  const diff = String(response.data);
 
   if (!diff) {
     console.log("No diff found");
@@ -310,12 +294,35 @@ async function main() {
   });
 
   const comments = await analyzeCode(filteredDiff, prDetails);
-  if (comments.length > 0) {
+  if (comments.length === 0) {
+    console.log("No comments to create");
+    return;
+  }
+
+  const existingCommentsResp = await octokit.pulls.listReviewComments({
+    owner: prDetails.owner,
+    repo: prDetails.repo,
+    pull_number: prDetails.pull_number,
+    per_page: 100,
+  });
+  const existingComments = existingCommentsResp.data;
+
+  const isDuplicate = (newComment: { body: string; path: string; line: number; side: "LEFT" | "RIGHT" }) => {
+    return existingComments.some(existing =>
+      existing.path === newComment.path &&
+      existing.line === newComment.line &&
+      existing.side === newComment.side
+    );
+  };
+
+  const uniqueComments = comments.filter(comment => !isDuplicate(comment));
+
+  if (uniqueComments.length > 0) {
     await createReviewComment(
       prDetails.owner,
       prDetails.repo,
       prDetails.pull_number,
-      comments
+      uniqueComments
     );
   }
 }

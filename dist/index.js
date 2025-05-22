@@ -15599,6 +15599,8 @@ function getPRDetails() {
             pull_number: number,
             title: (_a = prResponse.data.title) !== null && _a !== void 0 ? _a : "",
             description: (_b = prResponse.data.body) !== null && _b !== void 0 ? _b : "",
+            baseSha: prResponse.data.base.sha,
+            headSha: prResponse.data.head.sha,
         };
     });
 }
@@ -15783,32 +15785,18 @@ function createReviewComment(owner, repo, pull_number, comments) {
     });
 }
 function main() {
-    var _a;
     return __awaiter(this, void 0, void 0, function* () {
         const prDetails = yield getPRDetails();
-        let diff;
-        const eventData = JSON.parse((0, fs_1.readFileSync)((_a = process.env.GITHUB_EVENT_PATH) !== null && _a !== void 0 ? _a : "", "utf8"));
-        if (eventData.action === "opened") {
-            diff = yield getDiff(prDetails.owner, prDetails.repo, prDetails.pull_number);
-        }
-        else if (eventData.action === "synchronize") {
-            const newBaseSha = eventData.before;
-            const newHeadSha = eventData.after;
-            const response = yield octokit.repos.compareCommits({
-                headers: {
-                    accept: "application/vnd.github.v3.diff",
-                },
-                owner: prDetails.owner,
-                repo: prDetails.repo,
-                base: newBaseSha,
-                head: newHeadSha,
-            });
-            diff = String(response.data);
-        }
-        else {
-            console.log("Unsupported event:", process.env.GITHUB_EVENT_NAME);
-            return;
-        }
+        const response = yield octokit.repos.compareCommits({
+            owner: prDetails.owner,
+            repo: prDetails.repo,
+            base: prDetails.baseSha,
+            head: prDetails.headSha,
+            headers: {
+                accept: "application/vnd.github.v3.diff",
+            },
+        });
+        const diff = String(response.data);
         if (!diff) {
             console.log("No diff found");
             return;
@@ -15822,8 +15810,25 @@ function main() {
             return !excludePatterns.some((pattern) => { var _a; return (0, minimatch_1.default)((_a = file.to) !== null && _a !== void 0 ? _a : "", pattern); });
         });
         const comments = yield analyzeCode(filteredDiff, prDetails);
-        if (comments.length > 0) {
-            yield createReviewComment(prDetails.owner, prDetails.repo, prDetails.pull_number, comments);
+        if (comments.length === 0) {
+            console.log("No comments to create");
+            return;
+        }
+        const existingCommentsResp = yield octokit.pulls.listReviewComments({
+            owner: prDetails.owner,
+            repo: prDetails.repo,
+            pull_number: prDetails.pull_number,
+            per_page: 100,
+        });
+        const existingComments = existingCommentsResp.data;
+        const isDuplicate = (newComment) => {
+            return existingComments.some(existing => existing.path === newComment.path &&
+                existing.line === newComment.line &&
+                existing.side === newComment.side);
+        };
+        const uniqueComments = comments.filter(comment => !isDuplicate(comment));
+        if (uniqueComments.length > 0) {
+            yield createReviewComment(prDetails.owner, prDetails.repo, prDetails.pull_number, uniqueComments);
         }
     });
 }
