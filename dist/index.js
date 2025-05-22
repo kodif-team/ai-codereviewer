@@ -15659,7 +15659,6 @@ function createPrompt(file, chunk, prDetails) {
 Your task is to review pull requests. 
 
 Instructions:
-- Provide the response in following JSON format:  {"reviews": [{"lineNumber":  <line_number>, "reviewComment": "<review comment>"}]}
 - Do not give positive comments or compliments.
 - Provide comments and suggestions ONLY if there is something to improve, otherwise "reviews" should be an empty array.
 - Write the comment in GitHub Markdown format.
@@ -15685,8 +15684,25 @@ ${diffLines}
 \`\`\`
 `;
 }
+const reviewsJsonSchema = {
+    "type": "object",
+    "properties": {
+        "reviews": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "lineNumber": { "type": "integer" },
+                    "reviewComment": { "type": "string" }
+                },
+                "required": ["lineNumber", "reviewComment"]
+            }
+        }
+    },
+    "required": ["reviews"]
+};
 function getAIResponse(prompt) {
-    var _a, _b;
+    var _a, _b, _c;
     return __awaiter(this, void 0, void 0, function* () {
         const queryConfig = {
             model: OPENAI_API_MODEL,
@@ -15696,20 +15712,40 @@ function getAIResponse(prompt) {
             frequency_penalty: 0,
             presence_penalty: 0,
         };
-        try {
-            const response = yield openai.chat.completions.create(Object.assign(Object.assign({}, queryConfig), { response_format: { type: "json_object" }, messages: [
-                    {
-                        role: "system",
-                        content: prompt,
-                    },
-                ] }));
-            const res = ((_b = (_a = response.choices[0].message) === null || _a === void 0 ? void 0 : _a.content) === null || _b === void 0 ? void 0 : _b.trim()) || "{}";
-            return JSON.parse(res).reviews;
+        const maxRetries = 3;
+        const retryDelayMs = 1000;
+        let lastError;
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                const response = yield openai.chat.completions.create(Object.assign(Object.assign({}, queryConfig), { 
+                    // @ts-ignore
+                    response_format: {
+                        type: "json_schema",
+                        // @ts-ignore
+                        json_schema: {
+                            name: "code_reviews",
+                            description: "Schema for code review comments.",
+                            schema: reviewsJsonSchema,
+                        }
+                    }, messages: [
+                        {
+                            role: "system",
+                            content: prompt,
+                        },
+                    ] }));
+                const res = ((_b = (_a = response.choices[0].message) === null || _a === void 0 ? void 0 : _a.content) === null || _b === void 0 ? void 0 : _b.trim()) || "{}";
+                console.log((_c = response.choices[0].message) === null || _c === void 0 ? void 0 : _c.content);
+                return JSON.parse(res).reviews;
+            }
+            catch (error) {
+                lastError = error;
+                core.error(`OpenAI API call failed (attempt ${attempt} of ${maxRetries}): ${error}`);
+                if (attempt < maxRetries) {
+                    yield new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+                }
+            }
         }
-        catch (error) {
-            console.error("Error:", error);
-            return null;
-        }
+        throw lastError;
     });
 }
 function buildLineToPositionMap(chunk) {

@@ -109,7 +109,6 @@ function createPrompt(file: File, chunk: Chunk, prDetails: PRDetails): string {
 Your task is to review pull requests. 
 
 Instructions:
-- Provide the response in following JSON format:  {"reviews": [{"lineNumber":  <line_number>, "reviewComment": "<review comment>"}]}
 - Do not give positive comments or compliments.
 - Provide comments and suggestions ONLY if there is something to improve, otherwise "reviews" should be an empty array.
 - Write the comment in GitHub Markdown format.
@@ -138,6 +137,25 @@ ${diffLines}
 `;
 }
 
+const reviewsJsonSchema =
+{
+  "type": "object",
+  "properties": {
+    "reviews": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "lineNumber": { "type": "integer" },
+          "reviewComment": { "type": "string" }
+        },
+        "required": ["lineNumber", "reviewComment"]
+      }
+    }
+  },
+  "required": ["reviews"]
+}
+
 async function getAIResponse(prompt: string): Promise<Array<{
   lineNumber: string;
   reviewComment: string;
@@ -151,24 +169,45 @@ async function getAIResponse(prompt: string): Promise<Array<{
     presence_penalty: 0,
   };
 
-  try {
-    const response = await openai.chat.completions.create({
-      ...queryConfig,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content: prompt,
-        },
-      ],
-    });
+  const maxRetries = 3;
+  const retryDelayMs = 1000;
+  let lastError: any;
 
-    const res = response.choices[0].message?.content?.trim() || "{}";
-    return JSON.parse(res).reviews;
-  } catch (error) {
-    console.error("Error:", error);
-    return null;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await openai.chat.completions.create({
+        ...queryConfig,
+        // @ts-ignore
+        response_format: { 
+          type: "json_schema" as any, 
+          // @ts-ignore
+          json_schema: {
+            name: "code_reviews",
+            description: "Schema for code review comments.",
+            schema: reviewsJsonSchema,            
+          }
+        },
+        messages: [
+          {
+            role: "system",
+            content: prompt,
+          },
+        ],
+      });
+
+      const res = response.choices[0].message?.content?.trim() || "{}";
+      console.log(response.choices[0].message?.content);
+      return JSON.parse(res).reviews;
+      
+    } catch (error) {
+      lastError = error;
+      core.error(`OpenAI API call failed (attempt ${attempt} of ${maxRetries}): ${error}`);
+      if (attempt < maxRetries) {
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+      }
+    }
   }
+  throw lastError;
 }
 
 function buildLineToPositionMap(chunk: Chunk): Record<number, number> {
