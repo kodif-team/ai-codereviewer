@@ -149,7 +149,7 @@ const reviewsJsonSchema =
         "type": "object",
         "properties": {
           "lineNumber": { "type": "integer" },
-          "changeType": { "type": "enum", "enum": ["+", "-"] },
+          "changeType": { "type": "string", "description": "Either '+' for additions or '-' for deletions" },
           "reviewComment": { "type": "string" }
         },
         "required": ["lineNumber", "changeType", "reviewComment"]
