@@ -15758,8 +15758,8 @@ function getAIResponse(prompt) {
 }
 function buildLineToPositionMap(chunks) {
     const map = {};
+    let pos = 0;
     for (const chunk of chunks) {
-        let pos = 0;
         for (const change of chunk.changes) {
             pos++;
             if (change.type === 'add' || change.type === 'normal') {
