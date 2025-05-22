@@ -66,42 +66,48 @@ async function analyzeCode(
     const currentFilePath = file.to;
     if (!currentFilePath || currentFilePath === "/dev/null") continue;
 
-    for (const chunk of file.chunks) {
-      const prompt = createPrompt(file, chunk, prDetails);
-      console.log(prompt);
-      
-      const aiResponse = await getAIResponse(prompt);
-      if (aiResponse) {
-        const newCommentsForFile = createComment(aiResponse).map(comment => ({
-          ...comment,
-          path: currentFilePath,
-        }));
+    const prompt = createPrompt(file, prDetails);
+    console.log(prompt);
+    
+    const aiResponse = await getAIResponse(prompt);
+    if (aiResponse) {
+      const newCommentsForFile = createComment(aiResponse).map(comment => ({
+        ...comment,
+        path: currentFilePath,
+      }));
 
-        if (newCommentsForFile.length > 0) {
-          comments.push(...newCommentsForFile);
-        }
+      if (newCommentsForFile.length > 0) {
+        comments.push(...newCommentsForFile);
       }
     }
   }
   return comments;
 }
 
-function createPrompt(file: File, chunk: Chunk, prDetails: PRDetails): string {
-  const diffLines = chunk.changes
-    .map((change) => {
-      let lineNumber: number;
-      if (change.type === 'add') {
-        lineNumber = change.ln;
-      } else if (change.type === 'del') {
-        lineNumber = change.ln;
-      } else if (change.type === 'normal') {
-        lineNumber = change.ln2;
-      } else {
-        return (change as any).content;
-      }
-      return `${lineNumber} ${change.content}`;
-    })
-    .join("\\n");
+function createDiffLines(chunk: Chunk): string {
+  return chunk.changes
+  .map((change) => {
+    let lineNumber: number;
+    if (change.type === 'add') {
+      lineNumber = change.ln;
+    } else if (change.type === 'del') {
+      lineNumber = change.ln;
+    } else if (change.type === 'normal') {
+      lineNumber = change.ln2;
+    } else {
+      return (change as any).content;
+    }
+    return `${lineNumber} ${change.content}`;
+  })
+  .join("\n");
+}
+
+
+function createPrompt(file: File, prDetails: PRDetails): string {
+  const diffLines = file.chunks.map(chunk => {
+    return createDiffLines(chunk);
+  }).join("\n\n");
+
 
   return `
 ## Role  

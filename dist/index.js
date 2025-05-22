@@ -15620,23 +15620,21 @@ function analyzeCode(parsedDiff, prDetails) {
             const currentFilePath = file.to;
             if (!currentFilePath || currentFilePath === "/dev/null")
                 continue;
-            for (const chunk of file.chunks) {
-                const prompt = createPrompt(file, chunk, prDetails);
-                console.log(prompt);
-                const aiResponse = yield getAIResponse(prompt);
-                if (aiResponse) {
-                    const newCommentsForFile = createComment(aiResponse).map(comment => (Object.assign(Object.assign({}, comment), { path: currentFilePath })));
-                    if (newCommentsForFile.length > 0) {
-                        comments.push(...newCommentsForFile);
-                    }
+            const prompt = createPrompt(file, prDetails);
+            console.log(prompt);
+            const aiResponse = yield getAIResponse(prompt);
+            if (aiResponse) {
+                const newCommentsForFile = createComment(aiResponse).map(comment => (Object.assign(Object.assign({}, comment), { path: currentFilePath })));
+                if (newCommentsForFile.length > 0) {
+                    comments.push(...newCommentsForFile);
                 }
             }
         }
         return comments;
     });
 }
-function createPrompt(file, chunk, prDetails) {
-    const diffLines = chunk.changes
+function createDiffLines(chunk) {
+    return chunk.changes
         .map((change) => {
         let lineNumber;
         if (change.type === 'add') {
@@ -15653,7 +15651,12 @@ function createPrompt(file, chunk, prDetails) {
         }
         return `${lineNumber} ${change.content}`;
     })
-        .join("\\n");
+        .join("\n");
+}
+function createPrompt(file, prDetails) {
+    const diffLines = file.chunks.map(chunk => {
+        return createDiffLines(chunk);
+    }).join("\n\n");
     return `
 ## Role  
 You are a code review assistant that provides objective, constructive feedback on pull requests.
