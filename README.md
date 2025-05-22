@@ -26,6 +26,9 @@ name: AI Code Reviewer
 
 on:
   pull_request:
+    branches:
+      - main
+
     types:
       - opened
       - synchronize
@@ -33,7 +36,7 @@ on:
 permissions:
   contents: read
   pull-requests: write
-
+        
 jobs:
   review:
     runs-on: ubuntu-latest
@@ -42,13 +45,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: AI Code Reviewer
-        uses: kodif-team/ai-code-reviewer@v3.1
+        uses: kodif-team/ai-codereviewer@v3.4
         with:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # The GITHUB_TOKEN is there by default so you just need to keep it like it is and not necessarily need to add it as secret as it will throw an error. [More Details](https://docs.github.com/en/actions/security-guides/automatic-token-authentication#about-the-github_token-secret)
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_API_MODEL: "gpt-4.1"
-          EXCLUDE: "**/*.json, **/*.md" # Optional: exclude patterns separated by commas
-          GUIDELINES: | # Optional: provide additional review guidelines (language, project, team specific)
+          EXCLUDE: "**/*.json, **/*.md"
+          GUIDELINES: |
             - Use descriptive variable names (user_count not uc)
             - Follow PEP 8 style guidelines
             - Use list comprehensions for simple transformations
@@ -58,7 +61,6 @@ jobs:
             - Ensure robust error handling and logging mechanisms are in place
             - Handle edge cases and errors gracefully
             - Write unit tests for new functions
-
 ```
 
 4. Customize the `EXCLUDE` input if you want to ignore certain file patterns from being reviewed.
