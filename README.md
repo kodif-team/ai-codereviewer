@@ -71,6 +71,12 @@ jobs:
 The AI Code Reviewer GitHub Action retrieves the pull request diff, filters out excluded files, and sends code chunks to
 the OpenAI API. It then generates review comments based on the AI's response and adds them to the pull request.
 
+## Current Limitations
+
+It can't create a comment to the whole PR without attaching to a specific code line.
+
+Assume that we want to ensure that PR title contains Jira ticket and that description lists the changes, we can't do that currently
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit issues or pull requests to improve the AI Code Reviewer GitHub
