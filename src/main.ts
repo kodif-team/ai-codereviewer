@@ -53,7 +53,7 @@ async function getDiff(
     pull_number,
     mediaType: { format: "diff" },
   });
-  return response.data as string;
+  return response.data as unknown as string;
 }
 
 async function analyzeCode(
@@ -65,19 +65,22 @@ async function analyzeCode(
   for (const file of parsedDiff) {
     if (!file.to || file.to === "/dev/null") continue;
 
-    const lineToPosition = buildLineToPositionMap(file);
+    const currentFilePath = file.to;
+
     for (const chunk of file.chunks) {
+      const lineToPosition = buildLineToPositionMap(chunk);
       const prompt = createPrompt(file, chunk, prDetails);
-      core.info(prompt);
+      console.log(prompt);
       
       const aiResponse = await getAIResponse(prompt);
       if (aiResponse) {
-        const newComments = createComment(lineToPosition, aiResponse).map(comment => ({
-          ...comment, path: file.to
+        const newCommentsForFile = createComment(lineToPosition, aiResponse).map(comment => ({
+          ...comment,
+          path: currentFilePath,
         }));
 
-        if (newComments) {
-          comments.push(...newComments);
+        if (newCommentsForFile.length > 0) {
+          comments.push(...newCommentsForFile);
         }
       }
     }
@@ -86,14 +89,24 @@ async function analyzeCode(
 }
 
 function createPrompt(file: File, chunk: Chunk, prDetails: PRDetails): string {
-  const guidelines = GUIDELINES != "" ? `
-Code Review Guidelines:
-${GUIDELINES}
-  ` : "";
+  const diffLines = chunk.changes
+    .map((change) => {
+      let lineNumber: number;
+      if (change.type === 'add') {
+        lineNumber = change.ln;
+      } else if (change.type === 'del') {
+        lineNumber = change.ln;
+      } else if (change.type === 'normal') {
+        lineNumber = change.ln2;
+      } else {
+        return (change as any).content;
+      }
+      return `${lineNumber} ${change.content}`;
+    })
+    .join("\\n");
 
   return `
 Your task is to review pull requests. 
-${guidelines}
 
 Instructions:
 - Provide the response in following JSON format:  {"reviews": [{"lineNumber":  <line_number>, "reviewComment": "<review comment>"}]}
@@ -102,11 +115,12 @@ Instructions:
 - Write the comment in GitHub Markdown format.
 - Use the given description only for the overall context and only comment the code.
 - IMPORTANT: NEVER suggest adding comments to the code.
+${GUIDELINES}
 
 Review the following code diff in the file "${
     file.to
   }" and take the pull request title and description into account when writing the response.
-  
+
 Pull request title: ${prDetails.title}
 Pull request description:
 
@@ -114,14 +128,12 @@ Pull request description:
 ${prDetails.description}
 ---
 
+Hunk header: @@ -${chunk.oldStart},${chunk.oldLines} +${chunk.newStart},${chunk.newLines} @@
+
 Git diff to review:
 
 \`\`\`diff
-${chunk.content}
-${chunk.changes
-  // @ts-expect-error - ln and ln2 exists where needed
-  .map((c) => `${c.ln ? c.ln : c.ln2} ${c.content}`)
-  .join("\n")}
+${diffLines}
 \`\`\`
 `;
 }
@@ -159,18 +171,16 @@ async function getAIResponse(prompt: string): Promise<Array<{
   }
 }
 
-// Helper to build lineNumber -> position mapping for a file's diff
-function buildLineToPositionMap(file: File) {
+function buildLineToPositionMap(chunk: Chunk): Record<number, number> {
   const map: Record<number, number> = {};
-  let position = 0;
-  for (const chunk of file.chunks) {
-    for (const change of chunk.changes) {
-      if (change.type !== 'del') {
-        position++;
-        if (change.ln2 !== undefined) {
-          map[change.ln2] = position;
-        }
-      }
+  let currentPositionInDiff = 0;
+  for (const change of chunk.changes) {
+    if (change.type === 'add') {
+      currentPositionInDiff++;
+      map[change.ln] = currentPositionInDiff;
+    } else if (change.type === 'normal') {
+      currentPositionInDiff++;
+      map[change.ln2] = currentPositionInDiff;
     }
   }
   return map;
