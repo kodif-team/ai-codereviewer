@@ -29,27 +29,40 @@ on:
     types:
       - opened
       - synchronize
-permissions: write-all
+
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   review:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: AI Code Reviewer
-        uses: your-username/ai-code-reviewer@main
+        uses: kodif-team/ai-code-reviewer@v2.3
         with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # The GITHUB_TOKEN is there by default so you just need to keep it like it is and not necessarily need to add it as secret as it will throw an error. [More Details](https://docs.github.com/en/actions/security-guides/automatic-token-authentication#about-the-github_token-secret)
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_API_MODEL: "gpt-4" # Optional: defaults to "gpt-4"
-          exclude: "**/*.json, **/*.md" # Optional: exclude patterns separated by commas
+          OPENAI_API_MODEL: "gpt-4.1"
+          EXCLUDE: "**/*.json, **/*.md" # Optional: exclude patterns separated by commas
+          GUIDELINES: | # Optional: provide review guidelines
+            - Follow Python best practices for readability and maintainability
+            - Ensure code is clean and readable
+            - Ensure robust error handling and logging mechanisms are in place
+            - Avoid unnecessary complexity and code duplication
+            - Manage dependencies effectively and audit for vulnerabilities
+            - Use meaningful variable and function names
+            - Keep functions small and focused (single responsibility)
+            - Handle edge cases and errors gracefully
+            - Write unit tests for new functions
+
 ```
 
-4. Replace `your-username` with your GitHub username or organization name where the AI Code Reviewer repository is
-   located.
-
-5. Customize the `exclude` input if you want to ignore certain file patterns from being reviewed.
+4. Customize the `EXCLUDE` input if you want to ignore certain file patterns from being reviewed.
+5. Provide the `GUIDELINES` input to fine-tune code review.
 
 6. Commit the changes to your repository, and AI Code Reviewer will start working on your future pull requests.
 

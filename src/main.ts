@@ -68,7 +68,7 @@ async function analyzeCode(
     const lineToPosition = buildLineToPositionMap(file);
     for (const chunk of file.chunks) {
       const prompt = createPrompt(file, chunk, prDetails);
-      console.log(prompt);
+      core.info(prompt);
       
       const aiResponse = await getAIResponse(prompt);
       if (aiResponse) {
