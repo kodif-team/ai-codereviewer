@@ -2,6 +2,8 @@ import { readFileSync } from "fs";
 import * as core from "@actions/core";
 import OpenAI from "openai";
 import { Octokit } from "@octokit/rest";
+import { retry } from "@octokit/plugin-retry";
+
 import parseDiff, { Chunk, File } from "parse-diff";
 import minimatch from "minimatch";
 
@@ -10,7 +12,8 @@ const OPENAI_API_KEY: string = core.getInput("OPENAI_API_KEY");
 const OPENAI_API_MODEL: string = core.getInput("OPENAI_API_MODEL");
 const GUIDELINES:string = core.getInput("GUIDELINES");
 
-const octokit = new Octokit({ auth: GITHUB_TOKEN });
+const MyOctokit = Octokit.plugin(retry);
+const octokit = new MyOctokit({ auth: GITHUB_TOKEN });
 
 const openai = new OpenAI({
   apiKey: OPENAI_API_KEY,
@@ -262,6 +265,14 @@ async function createReviewComment(
   });
 }
 
+function chunkArray<T>(array: T[], chunkSize: number): T[][] {
+  const results: T[][] = [];
+  for (let i = 0; i < array.length; i += chunkSize) {
+    results.push(array.slice(i, i + chunkSize));
+  }
+  return results;
+}
+
 async function main() {
   const prDetails = await getPRDetails();
 
@@ -318,12 +329,16 @@ async function main() {
 
   const uniqueComments = comments.filter(comment => !isDuplicate(comment));
 
-  if (uniqueComments.length > 0) {
+  const BATCH_SIZE = 50;
+  const commentBatches = chunkArray(uniqueComments, BATCH_SIZE);
+
+  for (const batch of commentBatches) {
+    console.log(`Creating review comment batch ${commentBatches.indexOf(batch) + 1} of ${commentBatches.length}`);
     await createReviewComment(
       prDetails.owner,
       prDetails.repo,
       prDetails.pull_number,
-      uniqueComments
+      batch
     );
   }
 }
