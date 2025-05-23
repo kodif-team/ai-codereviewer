@@ -45,7 +45,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: AI Code Reviewer
-        uses: kodif-team/ai-codereviewer@v3.4
+        uses: kodif-team/ai-codereviewer@main
         with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
