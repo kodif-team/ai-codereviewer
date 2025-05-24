@@ -2,6 +2,7 @@ import { readFileSync } from "fs";
 import * as core from "@actions/core";
 import OpenAI from "openai";
 import { Octokit } from "@octokit/rest";
+import { graphql } from "@octokit/graphql";
 import { retry } from "@octokit/plugin-retry";
 
 import parseDiff, { Chunk, File } from "parse-diff";
@@ -27,10 +28,11 @@ interface PRDetails {
   description: string;
   baseSha: string;
   headSha: string;
+  nodeId: string;
 }
 
 async function getPRDetails(): Promise<PRDetails> {
-  const { repository, number } = JSON.parse(
+  const { repository, number, pull_request } = JSON.parse(
     readFileSync(process.env.GITHUB_EVENT_PATH || "", "utf8")
   );
   const prResponse = await octokit.pulls.get({
@@ -46,21 +48,8 @@ async function getPRDetails(): Promise<PRDetails> {
     description: prResponse.data.body ?? "",
     baseSha: prResponse.data.base.sha,
     headSha: prResponse.data.head.sha,
+    nodeId: prResponse.data.node_id,
   };
-}
-
-async function getDiff(
-  owner: string,
-  repo: string,
-  pull_number: number
-): Promise<string | null> {
-  const response = await octokit.pulls.get({
-    owner,
-    repo,
-    pull_number,
-    mediaType: { format: "diff" },
-  });
-  return response.data as unknown as string;
 }
 
 async function analyzeCode(
@@ -273,6 +262,79 @@ function chunkArray<T>(array: T[], chunkSize: number): T[][] {
   return results;
 }
 
+async function getExistingCommentsGraphQL(prDetails: PRDetails): Promise<Array<{ path: string; line: number; body: string; side: "LEFT" | "RIGHT" }>> {
+  const query = `
+    query GetPullRequestReviewThreads($owner: String!, $repo: String!, $pullNumber: Int!) {
+      repository(owner: $owner, name: $repo) {
+        pullRequest(number: $pullNumber) {
+          reviewThreads(first: 100) { # Adjust pagination as needed
+            nodes {
+              isOutdated
+              isResolved
+              diffSide # LEFT or RIGHT side of the diff
+              comments(first: 100) { # Adjust pagination for comments
+                nodes {
+                  path
+                  body
+                  actualHeadLine: line # Line number in the HEAD of the PR
+                  originalBaseLine: originalLine # Line number in the BASE of the PR
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  try {
+    console.log('Getting existing comments with GraphQL:', query);
+    const gqlResponse: any = await graphql(query, {
+      owner: prDetails.owner,
+      repo: prDetails.repo,
+      pullNumber: prDetails.pull_number,
+      headers: {
+        authorization: `token ${GITHUB_TOKEN}`,
+      },
+    });
+
+    const existingComments: Array<{ path: string; line: number; body: string; side: "LEFT" | "RIGHT" }> = [];
+    gqlResponse.repository.pullRequest.reviewThreads.nodes.forEach((thread: any) => {
+      if (!thread.isOutdated) {
+        const threadSide = thread.diffSide === "LEFT" ? "LEFT" : "RIGHT"; // Ensure valid enum values
+
+        thread.comments.nodes.forEach((commentNode: any) => {
+          let relevantLineNumber: number;
+
+          if (threadSide === "LEFT") {
+            relevantLineNumber = commentNode.originalBaseLine;
+          } else { // RIGHT
+            relevantLineNumber = commentNode.actualHeadLine;
+          }
+
+          // Ensure line number is valid for the comment context
+          if (relevantLineNumber === null || relevantLineNumber === undefined) {
+            console.log("Skipping comment without a valid line number for its side:", commentNode.body, "on thread side:", threadSide);
+            return; // Continue to the next comment
+          }
+
+          existingComments.push({
+            path: commentNode.path,
+            line: relevantLineNumber,
+            body: commentNode.body,
+            side: threadSide,
+          });
+        });
+      }
+    });
+    return existingComments;
+  } catch (error) {
+    console.error("Error fetching comments with GraphQL:", error);
+    core.setFailed("Failed to fetch existing comments using GraphQL.");
+    return []; // Return empty or throw, depending on desired error handling
+  }
+}
+
 async function main() {
   const prDetails = await getPRDetails();
 
@@ -311,20 +373,16 @@ async function main() {
     return;
   }
 
-  const existingCommentsResp = await octokit.pulls.listReviewComments({
-    owner: prDetails.owner,
-    repo: prDetails.repo,
-    pull_number: prDetails.pull_number,
-    per_page: 100,
-  });
-  const existingComments = existingCommentsResp.data;
+  const existingComments = await getExistingCommentsGraphQL(prDetails);
+  console.log('Existing comments:', existingComments.length);
+
+  const existingCommentsSet = new Set(
+    existingComments.map(comment => `${comment.path}:${comment.line}:${comment.side}`)
+  );
 
   const isDuplicate = (newComment: { body: string; path: string; line: number; side: "LEFT" | "RIGHT" }) => {
-    return existingComments.some(existing =>
-      existing.path === newComment.path &&
-      existing.line === newComment.line &&
-      existing.side === newComment.side
-    );
+    const commentIdentifier = `${newComment.path}:${newComment.line}:${newComment.side}`;
+    return existingCommentsSet.has(commentIdentifier);
   };
 
   const uniqueComments = comments.filter(comment => !isDuplicate(comment));
