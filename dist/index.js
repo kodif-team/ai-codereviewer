@@ -10500,15 +10500,15 @@ function getExistingCommentsGraphQL(prDetails) {
         pullRequest(number: $pullNumber) {
           reviewThreads(first: 100) { # Adjust pagination as needed
             nodes {
+              isOutdated
               isResolved
+              diffSide # LEFT or RIGHT side of the diff
               comments(first: 100) { # Adjust pagination for comments
                 nodes {
                   path
-                  line: originalLine # or position, depending on what you need to match
                   body
-                  # side might need to be inferred or isn't directly available in the same way
-                  # For simplicity, let's assume we can derive it or it's less critical for duplication check here
-                  # If side is crucial, you might need to adjust how you check duplicates
+                  actualHeadLine: line # Line number in the HEAD of the PR
+                  originalBaseLine: originalLine # Line number in the BASE of the PR
                 }
               }
             }
@@ -10518,7 +10518,7 @@ function getExistingCommentsGraphQL(prDetails) {
     }
   `;
         try {
-            console.log('Getting existing comments with GraphQL');
+            console.log('Getting existing comments with GraphQL:', query);
             const gqlResponse = yield (0, graphql_1.graphql)(query, {
                 owner: prDetails.owner,
                 repo: prDetails.repo,
@@ -10527,21 +10527,28 @@ function getExistingCommentsGraphQL(prDetails) {
                     authorization: `token ${GITHUB_TOKEN}`,
                 },
             });
-            console.log(gqlResponse);
             const existingComments = [];
             gqlResponse.repository.pullRequest.reviewThreads.nodes.forEach((thread) => {
-                if (!thread.isResolved) {
-                    thread.comments.nodes.forEach((comment) => {
-                        // Assuming 'line' from GraphQL is equivalent to how you determine line for new comments.
-                        // 'side' determination might be tricky directly from GraphQL comment object structure for review comments
-                        // For this example, I'll omit 'side' or set a default if it's not easily derivable,
-                        // focusing on path, line, and body for duplication.
-                        // You might need a more sophisticated way to map GraphQL comment position/diff_hunk to 'side'.
+                if (!thread.isOutdated) {
+                    const threadSide = thread.diffSide === "LEFT" ? "LEFT" : "RIGHT"; // Ensure valid enum values
+                    thread.comments.nodes.forEach((commentNode) => {
+                        let relevantLineNumber;
+                        if (threadSide === "LEFT") {
+                            relevantLineNumber = commentNode.originalBaseLine;
+                        }
+                        else { // RIGHT
+                            relevantLineNumber = commentNode.actualHeadLine;
+                        }
+                        // Ensure line number is valid for the comment context
+                        if (relevantLineNumber === null || relevantLineNumber === undefined) {
+                            console.log("Skipping comment without a valid line number for its side:", commentNode.body, "on thread side:", threadSide);
+                            return; // Continue to the next comment
+                        }
                         existingComments.push({
-                            path: comment.path,
-                            line: comment.line,
-                            body: comment.body,
-                            side: "RIGHT", // Placeholder: You'll need to determine side based on your logic or if API provides hints
+                            path: commentNode.path,
+                            line: relevantLineNumber,
+                            body: commentNode.body,
+                            side: threadSide,
                         });
                     });
                 }
@@ -10587,10 +10594,10 @@ function main() {
         }
         const existingComments = yield getExistingCommentsGraphQL(prDetails);
         console.log('Existing comments:', existingComments.length);
+        const existingCommentsSet = new Set(existingComments.map(comment => `${comment.path}:${comment.line}:${comment.side}`));
         const isDuplicate = (newComment) => {
-            return existingComments.some(existing => existing.path === newComment.path &&
-                existing.line === newComment.line &&
-                existing.side === newComment.side);
+            const commentIdentifier = `${newComment.path}:${newComment.line}:${newComment.side}`;
+            return existingCommentsSet.has(commentIdentifier);
         };
         const uniqueComments = comments.filter(comment => !isDuplicate(comment));
         const BATCH_SIZE = 50;
