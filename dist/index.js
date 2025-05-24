@@ -10518,6 +10518,7 @@ function getExistingCommentsGraphQL(prDetails) {
     }
   `;
         try {
+            console.log('Getting existing comments with GraphQL');
             const gqlResponse = yield (0, graphql_1.graphql)(query, {
                 owner: prDetails.owner,
                 repo: prDetails.repo,
@@ -10585,6 +10586,7 @@ function main() {
             return;
         }
         const existingComments = yield getExistingCommentsGraphQL(prDetails);
+        console.log('Existing comments:', existingComments.length);
         const isDuplicate = (newComment) => {
             return existingComments.some(existing => existing.path === newComment.path &&
                 existing.line === newComment.line &&

@@ -288,6 +288,7 @@ async function getExistingCommentsGraphQL(prDetails: PRDetails): Promise<Array<{
   `;
 
   try {
+    console.log('Getting existing comments with GraphQL');
     const gqlResponse: any = await graphql(query, {
       owner: prDetails.owner,
       repo: prDetails.repo,
@@ -364,6 +365,7 @@ async function main() {
   }
 
   const existingComments = await getExistingCommentsGraphQL(prDetails);
+  console.log('Existing comments:', existingComments.length);
 
   const isDuplicate = (newComment: { body: string; path: string; line: number; side: "LEFT" | "RIGHT" }) => {
     return existingComments.some(existing =>
