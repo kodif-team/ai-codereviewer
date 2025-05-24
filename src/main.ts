@@ -32,7 +32,7 @@ interface PRDetails {
 }
 
 async function getPRDetails(): Promise<PRDetails> {
-  const { repository, number, pull_request } = JSON.parse(
+  const { repository, number } = JSON.parse(
     readFileSync(process.env.GITHUB_EVENT_PATH || "", "utf8")
   );
   const prResponse = await octokit.pulls.get({
@@ -111,6 +111,7 @@ You are a code review assistant that provides objective, constructive feedback o
 
 ## How to Review (Instructions):
 - Provide feedback ONLY when there are actionable improvements to suggest
+- Provide feedback ONLY when you have complete information to derive a conclusion
 - If no issues are found, return an empty reviews array
 - Format all comments in GitHub Markdown
 - Focus exclusively on the code changes, not PR titles or descriptions
