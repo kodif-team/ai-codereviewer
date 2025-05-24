@@ -10297,7 +10297,7 @@ const openai = new openai_1.default({
 function getPRDetails() {
     var _a, _b;
     return __awaiter(this, void 0, void 0, function* () {
-        const { repository, number, pull_request } = JSON.parse((0, fs_1.readFileSync)(process.env.GITHUB_EVENT_PATH || "", "utf8"));
+        const { repository, number } = JSON.parse((0, fs_1.readFileSync)(process.env.GITHUB_EVENT_PATH || "", "utf8"));
         const prResponse = yield octokit.pulls.get({
             owner: repository.owner.login,
             repo: repository.name,
@@ -10365,6 +10365,7 @@ You are a code review assistant that provides objective, constructive feedback o
 
 ## How to Review (Instructions):
 - Provide feedback ONLY when there are actionable improvements to suggest
+- Provide feedback ONLY when you have complete information to derive a conclusion
 - If no issues are found, return an empty reviews array
 - Format all comments in GitHub Markdown
 - Focus exclusively on the code changes, not PR titles or descriptions
