@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Open AI powered code reviews",
   "main": "lib/main.js",
-  "author": "Ville Saukkonen",
+  "author": "Ville Saukkonen, Artur Sharipov",
   "license": "MIT",
   "scripts": {
     "build": "tsc",
@@ -13,8 +13,9 @@
   },
   "dependencies": {
     "@actions/core": "^1.10.0",
-    "@octokit/rest": "^21.1.1",
+    "@octokit/graphql": "^9.0.1",
     "@octokit/plugin-retry": "^8.0.1",
+    "@octokit/rest": "^21.1.1",
     "minimatch": "^7.4.2",
     "openai": "^4.103.0",
     "parse-diff": "^0.11.1",

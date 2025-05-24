@@ -10296,7 +10296,7 @@ const openai = new openai_1.default({
 function getPRDetails() {
     var _a, _b;
     return __awaiter(this, void 0, void 0, function* () {
-        const { repository, number } = JSON.parse((0, fs_1.readFileSync)(process.env.GITHUB_EVENT_PATH || "", "utf8"));
+        const { repository, number, pull_request } = JSON.parse((0, fs_1.readFileSync)(process.env.GITHUB_EVENT_PATH || "", "utf8"));
         const prResponse = yield octokit.pulls.get({
             owner: repository.owner.login,
             repo: repository.name,
@@ -10310,18 +10310,8 @@ function getPRDetails() {
             description: (_b = prResponse.data.body) !== null && _b !== void 0 ? _b : "",
             baseSha: prResponse.data.base.sha,
             headSha: prResponse.data.head.sha,
+            nodeId: prResponse.data.node_id,
         };
-    });
-}
-function getDiff(owner, repo, pull_number) {
-    return __awaiter(this, void 0, void 0, function* () {
-        const response = yield octokit.pulls.get({
-            owner,
-            repo,
-            pull_number,
-            mediaType: { format: "diff" },
-        });
-        return response.data;
     });
 }
 function analyzeCode(parsedDiff, prDetails) {
@@ -10501,6 +10491,64 @@ function chunkArray(array, chunkSize) {
     }
     return results;
 }
+function getExistingCommentsGraphQL(prDetails) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const query = `
+    query GetPullRequestReviewThreads($owner: String!, $repo: String!, $pullNumber: Int!) {
+      repository(owner: $owner, name: $repo) {
+        pullRequest(number: $pullNumber) {
+          reviewThreads(first: 100) { # Adjust pagination as needed
+            nodes {
+              isResolved
+              comments(first: 100) { # Adjust pagination for comments
+                nodes {
+                  path
+                  line: originalLine # or position, depending on what you need to match
+                  body
+                  # side might need to be inferred or isn't directly available in the same way
+                  # For simplicity, let's assume we can derive it or it's less critical for duplication check here
+                  # If side is crucial, you might need to adjust how you check duplicates
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+        try {
+            const gqlResponse = yield octokit.graphql(query, {
+                owner: prDetails.owner,
+                repo: prDetails.repo,
+                pullNumber: prDetails.pull_number,
+            });
+            const existingComments = [];
+            gqlResponse.repository.pullRequest.reviewThreads.nodes.forEach((thread) => {
+                if (!thread.isResolved) {
+                    thread.comments.nodes.forEach((comment) => {
+                        // Assuming 'line' from GraphQL is equivalent to how you determine line for new comments.
+                        // 'side' determination might be tricky directly from GraphQL comment object structure for review comments
+                        // For this example, I'll omit 'side' or set a default if it's not easily derivable,
+                        // focusing on path, line, and body for duplication.
+                        // You might need a more sophisticated way to map GraphQL comment position/diff_hunk to 'side'.
+                        existingComments.push({
+                            path: comment.path,
+                            line: comment.line,
+                            body: comment.body,
+                            side: "RIGHT", // Placeholder: You'll need to determine side based on your logic or if API provides hints
+                        });
+                    });
+                }
+            });
+            return existingComments;
+        }
+        catch (error) {
+            console.error("Error fetching comments with GraphQL:", error);
+            core.setFailed("Failed to fetch existing comments using GraphQL.");
+            return []; // Return empty or throw, depending on desired error handling
+        }
+    });
+}
 function main() {
     return __awaiter(this, void 0, void 0, function* () {
         const prDetails = yield getPRDetails();
@@ -10531,13 +10579,7 @@ function main() {
             console.log("No comments to create");
             return;
         }
-        const existingCommentsResp = yield octokit.pulls.listReviewComments({
-            owner: prDetails.owner,
-            repo: prDetails.repo,
-            pull_number: prDetails.pull_number,
-            per_page: 100,
-        });
-        const existingComments = existingCommentsResp.data;
+        const existingComments = yield getExistingCommentsGraphQL(prDetails);
         const isDuplicate = (newComment) => {
             return existingComments.some(existing => existing.path === newComment.path &&
                 existing.line === newComment.line &&
