@@ -10315,6 +10315,29 @@ function getPRDetails() {
         };
     });
 }
+function getBaseFileContent(prDetails, filePath) {
+    return __awaiter(this, void 0, void 0, function* () {
+        try {
+            const response = yield octokit.repos.getContent({
+                owner: prDetails.owner,
+                repo: prDetails.repo,
+                path: filePath,
+                ref: prDetails.baseSha,
+            });
+            // The content is base64 encoded
+            // @ts-ignore
+            if (response.data.content) {
+                // @ts-ignore
+                return Buffer.from(response.data.content, "base64").toString("utf-8");
+            }
+            return "";
+        }
+        catch (error) {
+            core.warning(`Base file content not found for ${filePath}: ${error}`);
+            return "";
+        }
+    });
+}
 function analyzeCode(parsedDiff, prDetails) {
     return __awaiter(this, void 0, void 0, function* () {
         const comments = [];
@@ -10322,7 +10345,8 @@ function analyzeCode(parsedDiff, prDetails) {
             const currentFilePath = file.to;
             if (!currentFilePath || currentFilePath === "/dev/null")
                 continue;
-            const prompt = createPrompt(file, prDetails);
+            const baseFileContent = yield getBaseFileContent(prDetails, currentFilePath);
+            const prompt = createPrompt(file, prDetails, baseFileContent);
             console.log(prompt);
             const aiResponse = yield getAIResponse(prompt);
             if (aiResponse) {
@@ -10355,7 +10379,7 @@ function createDiffLines(chunk) {
     })
         .join("\n");
 }
-function createPrompt(file, prDetails) {
+function createPrompt(file, prDetails, baseFileContent) {
     const diffLines = file.chunks.map(chunk => {
         return createDiffLines(chunk);
     }).join("\n\n");
@@ -10364,8 +10388,8 @@ function createPrompt(file, prDetails) {
 You are a code review assistant that provides objective, constructive feedback on pull requests.
 
 ## How to Review (Instructions):
-- Provide feedback ONLY when there are actionable improvements to suggest
-- Provide feedback ONLY when you have complete information to derive a conclusion
+- Use the base file content to understand the context of the code changes.
+- Provide feedback only for the diff when there are actionable improvements to suggest
 - If no issues are found, return an empty reviews array
 - Format all comments in GitHub Markdown
 - Focus exclusively on the code changes, not PR titles or descriptions
@@ -10378,16 +10402,20 @@ You are a code review assistant that provides objective, constructive feedback o
 - Manage dependencies effectively and audit for vulnerabilities
 - Use descriptive nouns for variables, verbs for functions, and avoid abbreviations.
 - Keep functions small and focused (single responsibility)
-- Do not comment about the code removed unless you see usage of the code in the diff.
 ${GUIDELINES}
-
-Review the following code diff in the file "${file.to}" and take the pull request title and description into account when writing the response.
 
 Pull request title: ${prDetails.title}
 Pull request description:
 ---
 ${prDetails.description}
 ---
+
+Base file content:
+\`\`\`
+${baseFileContent}
+\`\`\`
+
+Review the following code diff in the file "${file.to}" and use the base file content to understand the context of the code changes.
 
 Git diff to review:
 
@@ -10419,7 +10447,7 @@ function getAIResponse(prompt) {
     return __awaiter(this, void 0, void 0, function* () {
         const queryConfig = {
             model: OPENAI_API_MODEL,
-            temperature: 0.2,
+            temperature: 0.0,
             max_tokens: 700,
             top_p: 1,
             frequency_penalty: 0,
