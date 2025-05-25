@@ -10402,7 +10402,6 @@ You are a code review assistant that provides objective, constructive feedback o
 - Manage dependencies effectively and audit for vulnerabilities
 - Use descriptive nouns for variables, verbs for functions, and avoid abbreviations.
 - Keep functions small and focused (single responsibility)
-- Do not comment about the code removed unless you see usage of the code in the diff.
 ${GUIDELINES}
 
 Pull request title: ${prDetails.title}
@@ -10448,7 +10447,7 @@ function getAIResponse(prompt) {
     return __awaiter(this, void 0, void 0, function* () {
         const queryConfig = {
             model: OPENAI_API_MODEL,
-            temperature: 0.2,
+            temperature: 0.0,
             max_tokens: 700,
             top_p: 1,
             frequency_penalty: 0,
