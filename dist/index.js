@@ -10330,11 +10330,11 @@ function getBaseFileContent(prDetails, filePath) {
                 // @ts-ignore
                 return Buffer.from(response.data.content, "base64").toString("utf-8");
             }
-            return null;
+            return "";
         }
         catch (error) {
             core.error(`Failed to get base file content for ${filePath}: ${error}`);
-            return null;
+            return "";
         }
     });
 }
@@ -10346,10 +10346,6 @@ function analyzeCode(parsedDiff, prDetails) {
             if (!currentFilePath || currentFilePath === "/dev/null")
                 continue;
             const baseFileContent = yield getBaseFileContent(prDetails, currentFilePath);
-            if (!baseFileContent) {
-                console.log(`No base file content found for ${currentFilePath}`);
-                continue;
-            }
             const prompt = createPrompt(file, prDetails, baseFileContent);
             console.log(prompt);
             const aiResponse = yield getAIResponse(prompt);

@@ -52,7 +52,7 @@ async function getPRDetails(): Promise<PRDetails> {
   };
 }
 
-async function getBaseFileContent(prDetails: PRDetails, filePath: string): Promise<string | null> {
+async function getBaseFileContent(prDetails: PRDetails, filePath: string): Promise<string> {
   try {
     const response = await octokit.repos.getContent({
       owner: prDetails.owner,
@@ -67,10 +67,10 @@ async function getBaseFileContent(prDetails: PRDetails, filePath: string): Promi
       // @ts-ignore
       return Buffer.from(response.data.content, "base64").toString("utf-8");
     }
-    return null;
+    return "";
   } catch (error) {
     core.error(`Failed to get base file content for ${filePath}: ${error}`);
-    return null;
+    return "";
   }
 }
 
@@ -85,11 +85,6 @@ async function analyzeCode(
     if (!currentFilePath || currentFilePath === "/dev/null") continue;
 
     const baseFileContent = await getBaseFileContent(prDetails, currentFilePath);
-    if (!baseFileContent) {
-      console.log(`No base file content found for ${currentFilePath}`);
-      continue;
-    }
-
     const prompt = createPrompt(file, prDetails, baseFileContent);
     console.log(prompt);
     
