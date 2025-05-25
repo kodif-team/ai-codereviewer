@@ -69,7 +69,7 @@ async function getBaseFileContent(prDetails: PRDetails, filePath: string): Promi
     }
     return "";
   } catch (error) {
-    core.error(`Failed to get base file content for ${filePath}: ${error}`);
+    core.warning(`Base file content not found for ${filePath}: ${error}`);
     return "";
   }
 }
