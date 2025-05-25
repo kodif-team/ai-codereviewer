@@ -10333,7 +10333,7 @@ function getBaseFileContent(prDetails, filePath) {
             return "";
         }
         catch (error) {
-            core.warning(`Base file content not found for ${filePath}: ${error}`);
+            console.log(`Base file content not found for ${filePath}`);
             return "";
         }
     });
