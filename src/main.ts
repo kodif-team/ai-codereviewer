@@ -162,9 +162,9 @@ ${prDetails.description}
 ---
 
 Base file content:
----
+\`\`\`
 ${baseFileContent}
----
+\`\`\`
 
 Review the following code diff in the file "${file.to}" and use the base file content to understand the context of the code changes.
 
