@@ -273,13 +273,33 @@ async function createReviewComment(
   pull_number: number,
   comments: Array<{ body: string; path: string; line: number; side: "LEFT" | "RIGHT" }>
 ): Promise<void> {
-  await octokit.pulls.createReview({
-    owner,
-    repo,
-    pull_number,
-    comments,
-    event: "COMMENT",
-  });
+
+  try {
+
+    await octokit.pulls.createReview({
+      owner,
+      repo,
+      pull_number,
+      comments,
+      event: "COMMENT",
+    });
+
+  } catch (error) {
+    console.warn("Error creating review comments batch:", error);
+    for (const comment of comments) {
+      try {
+        await octokit.pulls.createReview({
+          owner,
+          repo,
+          pull_number,
+          comments: [comment],
+          event: "COMMENT",
+        });
+      } catch (error) {
+        console.error("Error creating review comment:", comment, error);
+      }
+    }
+  }
 }
 
 function chunkArray<T>(array: T[], chunkSize: number): T[][] {
