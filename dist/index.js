@@ -10505,13 +10505,32 @@ function createComment(aiResponses) {
 }
 function createReviewComment(owner, repo, pull_number, comments) {
     return __awaiter(this, void 0, void 0, function* () {
-        yield octokit.pulls.createReview({
-            owner,
-            repo,
-            pull_number,
-            comments,
-            event: "COMMENT",
-        });
+        try {
+            yield octokit.pulls.createReview({
+                owner,
+                repo,
+                pull_number,
+                comments,
+                event: "COMMENT",
+            });
+        }
+        catch (error) {
+            console.warn("Error creating review comments batch:", error);
+            for (const comment of comments) {
+                try {
+                    yield octokit.pulls.createReview({
+                        owner,
+                        repo,
+                        pull_number,
+                        comments: [comment],
+                        event: "COMMENT",
+                    });
+                }
+                catch (error) {
+                    console.error("Error creating review comment:", comment, error);
+                }
+            }
+        }
     });
 }
 function chunkArray(array, chunkSize) {
